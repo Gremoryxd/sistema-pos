@@ -1,0 +1,16 @@
+{
+  "name": "Terminal Punto de Venta POS",
+  "short_name": "Sistema POS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2897/2897785.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

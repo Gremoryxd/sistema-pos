@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="/manifest.json">
+  <title>Terminal Punto de Venta</title>
+
+  <link rel="stylesheet" href="/styles.css?v=6">
+  <!-- Carga con Fallback Automático a Librerías Locales (/libs/) para Modo 100% Offline -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js" onerror="this.onerror=null;this.src='/libs/JsBarcode.all.min.js'"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.15/dist/index.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" onerror="this.onerror=null;this.src='/libs/html5-qrcode.min.js'"></script>
+</head>
+<body oncontextmenu="return false;">
+
+  <datalist id="bloqueo-historial"></datalist>
+
+  <!-- 1. PANTALLA DE BLOQUEO -->
+  <div id="pantallaBloqueo">
+    <div class="modal-caja" style="padding: 36px; max-width: 380px;">
+      <div class="icono-modal icono-azul">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+      </div>
+      <h2 class="modal-titulo" style="font-size:22px; margin-bottom: 6px;">Terminal Punto de Venta</h2>
+      <p style="color:var(--text-muted); margin-bottom:24px; font-size:13px;">Ingrese su código PIN de operador para desbloquear.</p>
+      <input type="text" id="inputPinAcceso" class="pin-seguro" list="bloqueo-historial" inputmode="numeric" autocomplete="one-time-code" style="width:100%; box-sizing:border-box; padding:14px; font-size:24px; font-weight: bold; text-align:center; border:1px solid var(--border-color); border-radius:var(--radius); letter-spacing:10px; margin-bottom:20px; background:var(--bg-body); color:var(--text-main); outline:none;" placeholder="••••">
+      <button class="btn-modal-imprimir" onclick="verificarAccesoInicial()" id="btnVerificarAcceso" style="background:#2563eb; font-size: 14px; padding: 15px; margin-bottom: 10px;">Desbloquear Terminal</button>
+      <button type="button" onclick="abrirModalLicenciaSistema(false)" style="background:transparent; border:none; color:#64748b; font-size:11px; font-weight:700; cursor:pointer; text-decoration:underline;">🔑 Estado de Licencia / Hardware ID</button>
+    </div>
+  </div>
+
+  <!-- 2. PANEL IZQUIERDO -->
+  <div class="panel-izquierdo">
+    <!-- BANNER AUTOMÁTICO DE AVISO DE VENCIMIENTO (5 DÍAS ANTES) -->
+    <div id="bannerAvisoLicencia" style="display:none; background:linear-gradient(90deg, #b45309, #d97706); color:white; padding:8px 14px; font-size:12px; font-weight:800; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid rgba(255,255,255,0.2);">
+      <span id="lblTextoBannerLicencia">⚠️ Aviso: Tu suscripción mensual vence pronto.</span>
+      <button type="button" onclick="abrirModalLicenciaSistema(false)" style="background:#0f172a; color:#fbbf24; border:1px solid #fbbf24; padding:4px 10px; border-radius:4px; font-size:11px; font-weight:800; cursor:pointer; white-space:nowrap; text-transform:uppercase;">🔑 Renovar Licencia</button>
+    </div>
+
+    <div class="header-busqueda">
+      <button class="btn-accion" id="btnDarkMode" onclick="toggleDarkMode()" style="flex:none; background:var(--bg-body); color:var(--text-main); border:1px solid var(--border-color); padding:10px 12px;" title="Cambiar Tema">Tema</button>
+      <button class="btn-accion" id="btnSonidoBeep" onclick="toggleSonidoBeep()" style="flex:none; background:var(--bg-body); color:var(--text-main); border:1px solid var(--border-color); padding:10px 10px;" title="Activar / Silenciar Beep de Escáner">🔊</button>
+      <div class="buscador-wrapper">
+        <input type="text" id="codigo" list="bloqueo-historial" autocomplete="one-time-code" placeholder="Escanear código, buscar nombre o TICKET-...">
+        <span class="kbd-hint">F1</span>
+        <div id="sugerenciasCarrito" class="sugerencias-dropdown"></div>
+      </div>
+      <button class="btn-accion" style="background:#0284c7;" onclick="iniciarEscanerCamara('carrito')" title="Escanear código de barras en vivo">📷 Escanear</button>
+      <button class="btn-accion btn-nuevo-prod" onclick="pedirPinSeguridad('nuevo_producto', '')">+ Producto</button>
+      <button class="btn-accion btn-inventario" onclick="pedirPinSeguridad('inventario', '')">Inventario</button>
+      <button class="btn-accion btn-etiquetas" onclick="pedirPinSeguridad('etiquetas', '')">Etiquetas</button>
+      <button class="btn-accion btn-gasto" onclick="abrirModalGasto()">Egresos</button>
+      <button class="btn-accion" style="background:#0d9488;" onclick="abrirModalArqueoCiego()" title="Declarar efectivo físico en cajón al entregar turno (Arqueo Ciego)">🧮 Turno</button>
+      <button class="btn-accion btn-corte" onclick="pedirPinSeguridad('corte_z', '')">Corte Z</button>
+      <button class="btn-accion" onclick="abrirHistorial()">Historial</button>
+    </div>
+
+    <!-- BARRA DINÁMICA DE VENTAS EN ESPERA (CARRITOS PAUSADOS) -->
+    <div id="barraVentasEspera" class="barra-espera-container"></div>
+
+    <div class="tabla-container">
+      <table id="tablaTicket">
+        <thead><tr><th>Descripción</th><th style="width:120px; text-align:center;">Cantidad</th><th>Precio Unit.</th><th>Subtotal</th><th style="width:90px; text-align:right;">Acción</th></tr></thead>
+        <tbody id="listaProductos"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 3. PANEL DERECHO (CAJA) -->
+  <div class="panel-derecho">
+    <div>
+      <h2 class="titulo-caja">
+        Resumen de Operación
+        <span id="lblCajeroActivo" class="badge-cajero" onclick="bloquearCaja()" title="Clic para cambiar de cajero o bloquear terminal">Bloqueado</span>
+      </h2>
+      
+      <div class="totales-grid">
+        <span class="titulo-caja" style="display:block; margin-bottom:8px;">Datos del Cliente</span>
+        <input type="text" id="telefonoCliente" class="input-pago" list="bloqueo-historial" autocomplete="one-time-code" placeholder="Teléfono (Enter para buscar)" onkeypress="buscarClientePorTeclado(event)">
+        <input type="text" id="nombreCliente" class="input-pago" list="bloqueo-historial" autocomplete="one-time-code" placeholder="Nombre Completo">
+        <input type="text" id="direccionCliente" class="input-pago" list="bloqueo-historial" autocomplete="one-time-code" placeholder="Dirección de Entrega" style="margin-bottom:0;">
+        <div id="contenedorCampoRefFiscal" style="margin-top:8px;">
+          <input type="text" id="inputRefFiscalVenta" class="input-pago" list="bloqueo-historial" autocomplete="one-time-code" placeholder="Ref. Factura / DTE (Opcional)" style="margin-bottom:0; font-size:12.5px; border-style:dashed;">
+        </div>
+        <div id="badgeClienteVIP" class="badge-cliente-vip"></div>
+      </div>
+
+      <div class="totales-grid">
+        <span class="titulo-caja" style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span>Modalidad de Pago</span>
+          <span class="kbd-inline">F2</span>
+        </span>
+        <select id="selectMetodoPago" class="input-pago" style="margin-bottom:0; font-weight:700; background:#0f172a; border-color: #475569;">
+          <option value="Efectivo (Local)">Efectivo — Mostrador</option>
+          <option value="Transferencia Agrícola (Local)">Transferencia — Banco Agrícola (Local)</option>
+          <option value="Transferencia Cuscatlán (Local)">Transferencia — Banco Cuscatlán (Local)</option>
+          <option value="Pago Mixto (Local)">Pago Mixto — Efectivo + Transferencia (Local)</option>
+          <option value="Transferencia Agrícola (Envío)">Envío Pagado — Banco Agrícola</option>
+          <option value="Transferencia Cuscatlán (Envío)">Envío Pagado — Banco Cuscatlán</option>
+          <option value="Pago Mixto (Envío)">Envío Pagado — Pago Mixto (Efectivo + Transf.)</option>
+          <option value="Contraentrega (Envío)">Envío — Contraentrega</option>
+          <option value="Apartado (Local)">Apartado — Anticipo</option>
+        </select>
+
+        <!-- PANEL PAGO MIXTO (EFECTIVO + TRANSFERENCIA) -->
+        <div id="cajaPagoMixto" style="display:none; margin-top:12px; border-top:1px dashed #334155; padding-top:12px;">
+          <span style="font-size:11px; color:#38bdf8; font-weight: 700; text-transform: uppercase; display:block; margin-bottom:6px;">Desglose de Pago Mixto</span>
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <div style="flex:1; display:flex; flex-direction:column; align-items:flex-start;">
+              <small style="font-size:10px; color:#94a3b8; margin-bottom:3px;">Parte en Efectivo ($):</small>
+              <input type="number" step="0.01" id="inputMixtoEfectivo" class="input-pago" autocomplete="off" placeholder="0.00" style="margin:0;" oninput="recalcularPagoMixto()">
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; align-items:flex-start;">
+              <small style="font-size:10px; color:#94a3b8; margin-bottom:3px;">Banco Receptor:</small>
+              <select id="selectMixtoBanco" class="input-pago" style="margin:0;">
+                <option value="Agrícola">Banco Agrícola</option>
+                <option value="Cuscatlán">Banco Cuscatlán</option>
+              </select>
+            </div>
+          </div>
+          <div style="background:#0f172a; padding:8px 10px; border-radius:4px; border:1px solid #334155; font-size:13px; display:flex; justify-content:space-between;">
+            <span style="color:#94a3b8;">Monto a Transferir:</span>
+            <strong style="color:#38bdf8;">$<span id="lblMixtoTransferencia">0.00</span></strong>
+          </div>
+        </div>
+        
+        <div id="cajaDatosEnvio" style="display:none; margin-top:12px; border-top:1px dashed #334155; padding-top:12px;">
+           <span style="font-size:11px; color:#94a3b8; font-weight: 700; text-transform: uppercase; display:block; margin-bottom:6px;">Logística de Envío</span>
+           <input type="text" id="inputRepartidor" class="input-pago" list="bloqueo-historial" autocomplete="one-time-code" placeholder="Mensajero / Ruta asignada">
+           <input type="number" id="inputTarifaEnvio" class="input-pago" autocomplete="off" placeholder="Costo de envío ($)" style="margin-bottom: 0;" oninput="actualizarPantalla()">
+        </div>
+        
+        <div id="cajaAnticipo" style="display:none; margin-top:12px; border-top:1px dashed #334155; padding-top:12px;">
+           <span style="font-size:11px; color:#94a3b8; font-weight: 700; text-transform: uppercase; display:block; margin-bottom:6px;">Abono Inicial ($)</span>
+           <input type="number" id="inputMontoAnticipo" class="input-pago" autocomplete="off" placeholder="Monto del anticipo ($)" style="margin-bottom: 8px;" onkeyup="calcularCambio()">
+           <span style="font-size:11px; color:#94a3b8; font-weight: 700; text-transform: uppercase; display:block; margin-bottom:6px;">Recepción del Anticipo</span>
+           <select id="selectMetodoAnticipo" class="input-pago" style="margin-bottom: 0;" onchange="actualizarMetodoAnticipo()">
+             <option value="Efectivo">Efectivo (Cajón)</option>
+             <option value="Agrícola">Banco Agrícola</option>
+             <option value="Cuscatlán">Banco Cuscatlán</option>
+           </select>
+        </div>
+      </div>
+
+      <div class="totales-grid" style="padding-bottom:12px;">
+        <div style="font-size:14px; color:#cbd5e1;"><span>Subtotal:</span><span>$<span id="subtotalVenta">0.00</span></span></div>
+        <div style="font-size:14px; margin-top:6px; color:#f59e0b;"><span>Descuento Aplicado:</span><span>-$<span id="descuentoVenta">0.00</span></span></div>
+        <div id="lineaTarifaEnvio" style="display:none; font-size:14px; margin-top:6px; color:#38bdf8;"><span>Cargo por Envío:</span><span>+$<span id="montoTarifaEnvio">0.00</span></span></div>
+        <div class="gran-total"><span>TOTAL:</span><span>$<span id="totalVenta">0.00</span></span></div>
+      </div>
+      
+      <div class="totales-grid" style="background:transparent; border:1px solid #334155; box-shadow: none;" id="zonaEfectivoRecibido">
+        <div>
+          <span style="font-size:14px; color:#cbd5e1;">Efectivo Recibido:</span>
+          <div style="display:flex; align-items:center;">
+             <span style="color:#94a3b8; margin-right:6px; font-size: 18px;">$</span>
+             <input type="number" id="pagoCliente" class="input-pago" autocomplete="off" style="width:110px; text-align:right; font-size:20px; font-weight:bold; margin:0;" placeholder="0.00" onkeyup="calcularCambio()">
+          </div>
+        </div>
+        <div style="display:flex; gap:6px; margin-top:12px; margin-bottom:4px;" id="botonesDineroRapido">
+          <button class="btn-dinero-rapido" onclick="pagoRapido(10)">$10</button>
+          <button class="btn-dinero-rapido" onclick="pagoRapido(20)">$20</button>
+          <button class="btn-dinero-rapido" onclick="pagoRapido(50)">$50</button>
+          <button class="btn-dinero-rapido" onclick="pagoRapido('exacto')" style="background:#0284c7; border-color:#0284c7;">Exacto</button>
+        </div>
+        <div class="texto-cambio"><span>Cambio:</span><span>$<span id="cambioCliente">0.00</span></span></div>
+      </div>
+    </div>
+
+    <div>
+      <button class="btn-cobrar" onclick="procesarCobro()" id="btnCobrar">
+        <span>Procesar Pago</span>
+        <span class="kbd-inline">+</span>
+      </button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn-espera" style="flex:1;" onclick="ponerCarritoEnEspera()" title="Pausar esta cuenta para atender a otro cliente [F4]">
+          ⏸️ En Espera <span class="kbd-inline">F4</span>
+        </button>
+        <button class="btn-cortesia" style="flex:1;" onclick="iniciarProcesoCortesia()" title="Descuenta del inventario sin sumar dinero a la caja (Requiere PIN Admin)">
+          🎁 Cortesía ($0)
+        </button>
+      </div>
+      <div id="lblNotaLegalPieSistema" style="font-size:9.5px; color:#64748b; text-align:center; margin-top:10px; line-height:1.3;">
+        Software de Control Interno Administrativo de Inventario y Caja.
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL ARQUEO CIEGO DE ENTREGA DE TURNO (PARA CAJEROS)
+       ========================================================================= -->
+  <div id="modalArqueoCiego" class="modal-fondo" style="z-index: 1150;">
+    <div class="modal-caja" style="max-width: 420px;">
+      <div class="icono-modal icono-verde">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="6" y1="12" x2="18" y2="12"></line><line x1="6" y1="16" x2="14" y2="16"></line></svg>
+      </div>
+      <h2 class="modal-titulo" style="margin-bottom:6px;">🧮 Entrega de Turno (Arqueo Ciego)</h2>
+      <p style="color:var(--text-muted); font-size:12.5px; margin-bottom:18px; line-height:1.45;">
+        Cuente todo el dinero físico en billetes y monedas dentro del cajón e ingrese el monto total. El sistema enviará automáticamente la comparativa al Corte Z del Administrador.
+      </p>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+        <span style="font-size:24px; font-weight:800; color:var(--text-main);">$</span>
+        <input type="number" step="0.01" id="inputEfectivoArqueoCiego" autocomplete="off" style="flex:1; padding:12px; font-size:24px; font-weight:800; border:1px solid var(--border-color); border-radius:var(--radius); background:var(--bg-body); color:var(--text-main); outline:none; text-align:right;" placeholder="0.00">
+      </div>
+      <input type="text" id="inputNotasArqueoCiego" class="form-input" list="bloqueo-historial" placeholder="Observaciones del turno (Opcional)" style="margin-bottom:18px;">
+      <div style="display:flex; gap:10px;">
+        <button type="button" class="btn-modal-cerrar" style="flex:1; margin:0;" onclick="cerrarModalArqueoCiego()">Cancelar</button>
+        <button type="button" id="btnGuardarArqueoCiego" class="btn-modal-imprimir" style="flex:1.5; margin:0; background:#0d9488;" onclick="confirmarArqueoCiegoUI()">✅ Registrar Entrega</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL BITÁCORA DE AUDITORÍA DE SEGURIDAD (SOLO ADMIN)
+       ========================================================================= -->
+  <div id="modalAuditoriaSeguridad" class="modal-fondo" style="z-index: 1210;">
+    <div class="modal-caja modal-caja-historial" style="max-width: 960px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div>
+          <h2 class="modal-titulo" style="margin:0;">🛡️ Bitácora de Auditoría de Ciberseguridad</h2>
+          <span style="font-size:12px; color:var(--text-muted);">Registro inmutable de inicios de sesión, intentos fallidos de PIN, direcciones IP, anulaciones y arqueos.</span>
+        </div>
+        <button type="button" class="btn-modal-cerrar" style="width:auto; padding:8px 16px; margin:0;" onclick="cerrarModalAuditoriaSeguridad()">Cerrar</button>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap:wrap; background:var(--bg-body); padding:10px 14px; border-radius:var(--radius); border:1px solid var(--border-color);">
+        <span style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Fecha:</span>
+        <input type="date" id="filtroFechaAuditoria" class="input-pago" style="width:auto; min-width:155px; margin:0; padding:8px 12px; border:1px solid var(--border-color); color:var(--text-main); background:var(--bg-panel); font-weight:700;" onchange="cargarBitacoraAuditoriaUI()">
+        <button type="button" class="btn-ajuste-stock" style="background:#475569; padding:9px 14px;" onclick="document.getElementById('filtroFechaAuditoria').value=''; cargarBitacoraAuditoriaUI();">Ver Todas</button>
+        <input type="text" id="inputBuscarAuditoria" class="form-input" list="bloqueo-historial" style="flex:1; min-width:200px; padding:8px 12px;" placeholder="🔍 Filtrar por evento, IP, operador o detalle..." oninput="renderizarTablaAuditoriaDOM()">
+      </div>
+
+      <div class="tabla-container" style="flex:1; overflow-y:auto; border:1px solid var(--border-color); border-radius:var(--radius);">
+        <table>
+          <thead><tr><th>Fecha y Hora</th><th>Nivel</th><th>Evento</th><th>Detalle de Operación</th><th>Usuario</th><th>Dirección IP</th></tr></thead>
+          <tbody id="listaAuditoriaSeguridad"><tr><td colspan="6" style="text-align:center; padding:30px; color:var(--text-muted);">Cargando eventos de seguridad...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL DE ACTIVACIÓN Y LICENCIAMIENTO COMERCIAL (HARDWARE ID + VENCIMIENTO)
+       ========================================================================= -->
+  <div id="modalLicenciaSistema" class="modal-fondo" style="z-index: 1300;">
+    <div class="modal-caja" style="max-width: 500px; text-align: left;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+        <div>
+          <h2 class="modal-titulo" id="tituloModalLicencia" style="margin:0;">🔑 Licencia Comercial y Hardware ID</h2>
+          <span style="font-size:11px; color:var(--text-muted);">Protección criptográfica vinculada a la placa base de este servidor.</span>
+        </div>
+        <button type="button" id="btnCerrarModalLicencia" class="btn-eliminar" onclick="cerrarModalLicenciaSistema()">✕</button>
+      </div>
+
+      <div id="cajaAlertaBloqueoLicencia" style="display:none; background:rgba(239, 68, 68, 0.12); border:1px solid #ef4444; color:#ef4444; padding:12px; border-radius:var(--radius); font-size:12.5px; font-weight:700; margin-bottom:14px; line-height:1.45;"></div>
+
+      <div style="background:var(--bg-body); padding:12px; border-radius:var(--radius); border:1px solid var(--border-color); margin-bottom:14px;">
+        <div style="font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px;">Identificador Único de Hardware (Hardware ID):</div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="lblHardwareIdEquipo" class="form-input" readonly style="font-family:monospace; font-size:15px; font-weight:900; color:#2563eb; text-align:center; letter-spacing:1px; background:var(--bg-panel);" value="POS-SV-...">
+          <button type="button" class="btn-ajuste-stock" style="background:#0284c7; padding:10px 12px; white-space:nowrap;" onclick="copiarHardwareIdPortapapeles()">📋 Copiar ID</button>
+        </div>
+        <small style="display:block; margin-top:6px; font-size:11px; color:var(--text-muted);">Envía este código a soporte técnico para generar tu clave de renovación mensual.</small>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
+        <div style="background:var(--bg-body); padding:10px; border-radius:var(--radius); border:1px solid var(--border-color);">
+          <div style="font-size:10px; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Estado / Titular</div>
+          <div id="lblEstadoActualLicencia" style="font-size:13px; font-weight:800; color:var(--text-main); margin-top:3px;">Verificando...</div>
+        </div>
+        <div style="background:var(--bg-body); padding:10px; border-radius:var(--radius); border:1px solid var(--border-color);">
+          <div style="font-size:10px; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Vencimiento / Corte</div>
+          <div id="lblVencimientoActualLicencia" style="font-size:13px; font-weight:800; color:#10b981; margin-top:3px;">-</div>
+        </div>
+      </div>
+
+      <div class="form-grupo">
+        <label>Ingresar Nuevo Código de Activación / Renovación Mensual:</label>
+        <textarea id="inputCodigoLicenciaNuevo" class="form-input" rows="3" style="font-family:monospace; font-size:12px; resize:none;" placeholder="Pega aquí tu código POSLIC-..."></textarea>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button type="button" id="btnCancelarModalLicencia" class="btn-modal-cerrar" style="flex:1; margin:0;" onclick="cerrarModalLicenciaSistema()">Cerrar</button>
+        <button type="button" id="btnActivarLicencia" class="btn-modal-imprimir" style="flex:2; margin:0; background:#059669;" onclick="activarNuevaLicenciaUI()">✅ Activar y Desbloquear Licencia</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL PERSONALIZAR TICKET Y GUÍAS DE ENVÍO (SINCRONIZADO CON SQLITE)
+       ========================================================================= -->
+  <div id="modalPersonalizarTicket" class="modal-fondo" style="z-index: 1120;">
+    <div class="modal-caja" style="max-width: 600px; text-align: left;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+        <div>
+          <h2 class="modal-titulo" style="margin:0;">Personalización de Ticket, Textos Legales y Guías</h2>
+          <span style="font-size:11px; color:var(--text-muted);">Se sincroniza automáticamente en todas tus PCs y teléfonos.</span>
+        </div>
+        <button class="btn-eliminar" onclick="cerrarModalDiseñoTicket()">✕</button>
+      </div>
+
+      <div class="tabs-diseno">
+        <button type="button" id="tabBtnTicket" class="tab-btn-diseno activo" onclick="cambiarTabDiseno('ticket')">🧾 Ticket y Datos Legales</button>
+        <button type="button" id="tabBtnGuia" class="tab-btn-diseno" onclick="cambiarTabDiseno('guia')">📦 Guías de Envío</button>
+      </div>
+
+      <div id="seccionDisenoTicket">
+        <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:220px; display:flex; align-items:center; gap:10px; background:var(--bg-body); padding:10px; border-radius:var(--radius); border:1px solid var(--border-color);">
+            <div id="previewLogoSuperiorBox" style="width:58px; height:58px; border-radius:6px; background:white; border:1px dashed var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+              <span style="font-size:9px; color:#64748b; text-align:center;">Sin Logo</span>
+            </div>
+            <div style="flex:1;">
+              <label style="font-size:10px; font-weight:800; display:block; margin-bottom:5px;">LOGO SUPERIOR</label>
+              <input type="file" id="inputArchivoLogoSuperior" accept="image/*" style="display:none;" onchange="procesarImagenLogoSuperior(event)">
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <button type="button" class="btn-ajuste-stock" style="background:#2563eb; padding:5px 8px; font-size:10px;" onclick="document.getElementById('inputArchivoLogoSuperior').click()">Subir Logo</button>
+                <button type="button" class="btn-eliminar" style="padding:4px 8px; font-size:10px;" onclick="quitarImagenLogoSuperior()">Quitar</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex:1; min-width:220px; display:flex; align-items:center; gap:10px; background:var(--bg-body); padding:10px; border-radius:var(--radius); border:1px solid var(--border-color);">
+            <div id="previewWatermarkBox" style="width:58px; height:58px; border-radius:6px; background:white; border:1px dashed var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+              <span style="font-size:9px; color:#64748b; text-align:center;">Sin Fondo</span>
+            </div>
+            <div style="flex:1;">
+              <label style="font-size:10px; font-weight:800; display:block; margin-bottom:5px;">MARCA DE AGUA (FONDO)</label>
+              <input type="file" id="inputArchivoWatermark" accept="image/*" style="display:none;" onchange="procesarImagenWatermark(event)">
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <button type="button" class="btn-ajuste-stock" style="background:#7c3aed; padding:5px 8px; font-size:10px;" onclick="document.getElementById('inputArchivoWatermark').click()">Subir Fondo</button>
+                <button type="button" class="btn-eliminar" style="padding:4px 8px; font-size:10px;" onclick="quitarImagenWatermark()">Quitar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-grupo" style="background:var(--bg-body); padding:8px 12px; border-radius:var(--radius); border:1px solid var(--border-color);">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <label style="margin:0;">Intensidad / Opacidad de Marca de Agua:</label>
+            <span id="lblValorOpacidad" style="font-size:12px; font-weight:800; color:#2563eb;">18%</span>
+          </div>
+          <input type="range" id="cfgOpacidadWatermark" min="0.05" max="0.45" step="0.01" value="0.18" style="width:100%; margin-top:6px; cursor:pointer;" oninput="document.getElementById('lblValorOpacidad').innerText = Math.round(this.value * 100) + '%'">
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <div class="form-grupo" style="flex:1;"><label>Nombre de la Tienda</label><input type="text" id="cfgNombreTienda" class="form-input" list="bloqueo-historial" placeholder="Ej. MI TIENDA"></div>
+          <div class="form-grupo" style="flex:1;"><label>Subtítulo / Encabezado del Documento</label><input type="text" id="cfgSubtituloTienda" class="form-input" list="bloqueo-historial" placeholder="Ej. Comprobante de Control Interno"></div>
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <div class="form-grupo" style="flex:1;"><label>NIT / NRC / Registro (Opcional)</label><input type="text" id="cfgNitTienda" class="form-input" list="bloqueo-historial" placeholder="Ej. NRC: 123456-7"></div>
+          <div class="form-grupo" style="flex:1;"><label>Teléfono / WhatsApp Tienda</label><input type="text" id="cfgTelefonoTienda" class="form-input" list="bloqueo-historial" placeholder="Ej. WhatsApp: 7000-0000"></div>
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <div class="form-grupo" style="flex:1;"><label>Dirección de la Tienda</label><input type="text" id="cfgDireccionTienda" class="form-input" list="bloqueo-historial" placeholder="Ej. Centro Comercial Local #4"></div>
+          <div class="form-grupo" style="flex:1;"><label>Redes Sociales (IG / FB / TikTok)</label><input type="text" id="cfgRedesTienda" class="form-input" list="bloqueo-historial" placeholder="Ej. @mitienda_sv"></div>
+        </div>
+
+        <div class="form-grupo"><label>Política de Garantía / Cambios (En recuadro)</label><input type="text" id="cfgPoliticaTicket" class="form-input" list="bloqueo-historial" placeholder="Ej. Cambios máximo 7 días presentando este comprobante."></div>
+
+        <!-- SECCIÓN EDITABLE DE BLINDAJE LEGAL EL SALVADOR (DGII) -->
+        <div class="form-grupo" style="background:rgba(245, 158, 11, 0.08); border:1px solid rgba(245, 158, 11, 0.35); padding:10px; border-radius:var(--radius);">
+          <label style="color:#d97706;">⚖️ Leyenda Legal en Ticket (Control Interno / DGII El Salvador — Editable)</label>
+          <input type="text" id="cfgLeyendaLegalTicket" class="form-input" list="bloqueo-historial" placeholder="DOCUMENTO EXCLUSIVO DE CONTROL INTERNO DE INVENTARIO. NO TIENE VALIDEZ FISCAL NI SUSTITUYE FACTURA O DTE.">
+          <label style="color:#d97706; margin-top:8px;">⚖️ Nota Legal en Pie de Pantalla del Sistema (Editable)</label>
+          <input type="text" id="cfgNotaLegalPieSistema" class="form-input" list="bloqueo-historial" placeholder="Software de Control Interno Administrativo de Inventario y Caja.">
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <div class="form-grupo" style="flex:1;"><label>Mensaje de Despedida</label><input type="text" id="cfgFraseTicket" class="form-input" list="bloqueo-historial" placeholder="Ej. Gracias por su preferencia."></div>
+          <div class="form-grupo" style="flex:1;"><label>Saludo Destacado</label><input type="text" id="cfgSaludoFinalTicket" class="form-input" list="bloqueo-historial" placeholder="Ej. ¡GRACIAS POR SU COMPRA!"></div>
+        </div>
+
+        <div class="form-grupo"><label>Texto Inferior (Debajo del código de barras)</label><input type="text" id="cfgWebTicket" class="form-input" list="bloqueo-historial" placeholder="Ej. Conserve su comprobante"></div>
+
+        <div style="background:var(--bg-body); padding:10px 12px; border-radius:var(--radius); border:1px solid var(--border-color); margin-bottom:14px;">
+          <label class="chk-opcion-fila"><input type="checkbox" id="cfgMostrarCajeroTicket" checked> Mostrar nombre del Cajero en el ticket</label>
+          <label class="chk-opcion-fila"><input type="checkbox" id="cfgMostrarClienteTicket" checked> Mostrar datos del Cliente en el ticket</label>
+          <label class="chk-opcion-fila"><input type="checkbox" id="cfgMostrarBarcodeTicket" checked> Mostrar código de barras del ticket en el pie</label>
+          <label class="chk-opcion-fila"><input type="checkbox" id="cfgMostrarLeyendaLegalTicket" checked> Mostrar recuadro de Leyenda Legal (Control Interno / No Validez Fiscal) en el ticket</label>
+          <label class="chk-opcion-fila" style="margin-bottom:0;"><input type="checkbox" id="cfgMostrarCampoRefFiscal" checked> Mostrar casilla opcional "Ref. Factura / DTE" en el panel de cobro</label>
+        </div>
+      </div>
+
+      <div id="seccionDisenoGuia" style="display:none;">
+        <div style="display:flex; gap:10px;">
+          <div class="form-grupo" style="flex:1;"><label>Nombre del Remitente (Tienda)</label><input type="text" id="cfgRemitenteGuia" class="form-input" list="bloqueo-historial" placeholder="Ej. MI TIENDA SV"></div>
+          <div class="form-grupo" style="flex:1;"><label>Teléfono del Remitente</label><input type="text" id="cfgTelefonoRemitenteGuia" class="form-input" list="bloqueo-historial" placeholder="Ej. 7000-0000"></div>
+        </div>
+        <div class="form-grupo"><label>Dirección / Sucursal de Origen (Remitente)</label><input type="text" id="cfgDireccionRemitenteGuia" class="form-input" list="bloqueo-historial" placeholder="Ej. San Salvador, El Salvador"></div>
+        <div class="form-grupo"><label>Título Superior de la Guía</label><input type="text" id="cfgTituloEtiquetaGuia" class="form-input" list="bloqueo-historial" placeholder="Ej. ORDEN DE DESPACHO A DOMICILIO"></div>
+        <div class="form-grupo"><label>Instrucciones para Mensajero / Nota de Entrega</label><input type="text" id="cfgNotaGuia" class="form-input" list="bloqueo-historial" placeholder="Ej. Favor llamar al cliente antes de llegar."></div>
+        <div class="form-grupo"><label>Sello de Advertencia / Cuidado (Dejar vacío para ocultar)</label><input type="text" id="cfgSelloFragilGuia" class="form-input" list="bloqueo-historial" placeholder="Ej. 📦 FRÁGIL — MANEJAR CON CUIDADO"></div>
+        <div style="background:var(--bg-body); padding:10px 12px; border-radius:var(--radius); border:1px solid var(--border-color); margin-bottom:14px;">
+          <label class="chk-opcion-fila"><input type="checkbox" id="cfgMostrarLogoEnGuia" checked> Incluir el Logo de la tienda en el encabezado de la guía</label>
+          <label class="chk-opcion-fila" style="margin-bottom:0;"><input type="checkbox" id="cfgMostrarRepartidorEnGuia" checked> Mostrar nombre del Mensajero / Ruta asignada en la guía</label>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <button class="btn-modal-cerrar" style="flex:1; margin:0;" onclick="cerrarModalDiseñoTicket()">Cancelar</button>
+        <button class="btn-modal-imprimir" id="btnGuardarDisenoGlobal" style="flex:2; margin:0; background:#059669;" onclick="guardarDiseñoTicket()">Guardar Diseño en Servidor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE KARDEX CON FILTRO POR FECHAS -->
+  <div id="modalKardex" class="modal-fondo" style="z-index: 1110;">
+    <div class="modal-caja modal-caja-historial" style="max-width: 960px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border-color); padding-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <div>
+          <h2 class="modal-titulo" style="margin:0;">Kardex — Bitácora de Movimientos de Inventario</h2>
+          <span style="font-size:12px; color:var(--text-muted);">Registro de entradas, ventas, cortesías, devoluciones y ajustes por operador.</span>
+        </div>
+        <button class="btn-modal-cerrar" style="width:auto; padding:8px 16px; margin:0;" onclick="cerrarModalKardex()">Cerrar</button>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-bottom:14px; align-items:center; flex-wrap:wrap; background:var(--bg-body); padding:10px 14px; border-radius:var(--radius); border:1px solid var(--border-color);">
+        <span style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Filtrar por Fecha:</span>
+        <input type="date" id="filtroFechaKardex" class="input-pago" style="width:auto; min-width:160px; margin:0; padding:8px 12px; border:1px solid var(--border-color); color:var(--text-main); background:var(--bg-panel); font-weight:700;" onchange="cargarKardexConFiltro()">
+        <button class="btn-ajuste-stock" style="background:#475569; padding:9px 14px;" onclick="limpiarFiltroFechaKardex()">Ver Todas las Fechas</button>
+        <span id="lblResumenKardex" style="margin-left:auto; font-size:12px; font-weight:700; color:var(--text-muted);"></span>
+      </div>
+
+      <div class="tabla-container" style="flex:1; overflow-y:auto; border:1px solid var(--border-color); border-radius:var(--radius);">
+        <table>
+          <thead><tr><th>Fecha y Hora</th><th>Código</th><th>Producto</th><th>Tipo de Movimiento</th><th style="text-align:center;">Cantidad</th><th>Cajero / Operador</th></tr></thead>
+          <tbody id="listaKardexTabla"><tr><td colspan="6" style="text-align:center; padding:30px; color:var(--text-muted);">Cargando bitácora...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CREADOR/EDITOR DE PRODUCTOS -->
+  <div id="modalFichaProducto" class="modal-fondo" style="z-index: 1085;">
+    <div class="modal-caja" style="max-width: 480px; text-align: left;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+        <h2 class="modal-titulo" id="tituloModalFichaProd" style="margin:0;">Alta / Edición de Producto</h2>
+        <button class="btn-eliminar" onclick="cerrarFichaProducto()">✕</button>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px; background:var(--bg-body); padding:12px; border-radius:var(--radius); border:1px solid var(--border-color);">
+        <div id="previewFotoContainer" style="width:75px; height:75px; border-radius:8px; background:var(--bg-panel); border:1px dashed var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+          <span style="font-size:11px; color:var(--text-muted); text-align:center;">Sin Foto</span>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px; font-weight:800; display:block; margin-bottom:6px;">FOTO DEL ARTÍCULO</label>
+          <input type="file" id="inputArchivoFoto" accept="image/*" capture="environment" style="display:none;" onchange="procesarFotoCapturada(event)">
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="button" class="btn-ajuste-stock" style="background:#2563eb; padding:8px 12px;" onclick="document.getElementById('inputArchivoFoto').click()">📷 Tomar Foto / Galería</button>
+            <button type="button" class="btn-eliminar" style="padding:6px 10px;" onclick="limpiarFotoProducto()">Quitar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-grupo">
+        <label>Código de Barras / ID</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="prodInputId" class="form-input" list="bloqueo-historial" autocomplete="one-time-code" placeholder="Escanea o genera un código..." oninput="actualizarPreviewBarcodeProd()">
+          <button type="button" class="btn-ajuste-stock" style="background:#0284c7; white-space:nowrap; padding:0 12px;" onclick="iniciarEscanerCamara('producto')" title="Escanear con cámara">📷</button>
+          <button type="button" class="btn-ajuste-stock" style="background:#4f46e5; white-space:nowrap; padding:0 12px;" onclick="generarCodigoBarrasAutomatico()">⚡ Generar</button>
+        </div>
+        <div id="contenedorBarcodePreview" style="display:none; text-align:center; background:white; padding:8px; border-radius:6px; margin-top:8px; border:1px solid var(--border-color);">
+          <svg id="svgBarcodePreview" style="max-height:55px; width:100%;"></svg>
+          <button type="button" class="btn-ajuste-stock" style="background:#0369a1; margin-top:4px;" onclick="enviarProductoActualAColaEtiquetas()">🖨️ Mandar este código a Cola de Etiquetas</button>
+        </div>
+      </div>
+
+      <div class="form-grupo"><label>Nombre / Descripción del Producto</label><input type="text" id="prodInputNombre" class="form-input" list="bloqueo-historial" autocomplete="one-time-code" placeholder="Ej. Camisa Polo Azul Talla M"></div>
+
+      <div style="display:flex; gap:10px;">
+        <div class="form-grupo" style="flex:1;"><label>Precio Venta ($)</label><input type="number" step="0.01" id="prodInputPrecio" class="form-input" autocomplete="off" placeholder="0.00"></div>
+        <div class="form-grupo" style="flex:1;"><label>Costo Compra ($)</label><input type="number" step="0.01" id="prodInputCosto" class="form-input" autocomplete="off" placeholder="0.00"></div>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <div class="form-grupo" style="flex:1;"><label>Existencia (Stock)</label><input type="number" id="prodInputStock" class="form-input" autocomplete="off" placeholder="0" value="1"></div>
+        <div class="form-grupo" style="flex:1;"><label>Categoría (Opcional)</label><input type="text" id="prodInputCategoria" class="form-input" list="bloqueo-historial" autocomplete="one-time-code" placeholder="General"></div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <button type="button" id="btnEliminarProdMaster" class="btn-eliminar" style="display:none; padding:13px;" onclick="borrarProductoActual()">Borrar</button>
+        <button type="button" class="btn-modal-cerrar" style="flex:1; margin:0;" onclick="cerrarFichaProducto()">Cancelar</button>
+        <button type="button" id="btnGuardarProdMaster" class="btn-modal-imprimir" style="flex:2; margin:0; background:#059669;" onclick="guardarFichaProducto()">Guardar Producto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL LECTOR DE CÁMARA EN VIVO (ZBAR-WASM + ZOOM Y LENTES PARA IPHONE)
+       ========================================================================= -->
+  <div id="modalEscanerCamara" class="modal-fondo" style="z-index: 1200;">
+    <div class="modal-caja" style="max-width: 440px;">
+      <h2 class="modal-titulo" style="margin-bottom: 4px;">Escáner de Código de Barras</h2>
+      <p id="lblEstadoEscaner" style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">En papel usa Zoom 1.5x o 2x a ~18 cm de distancia para enfoque instantáneo:</p>
+      
+      <div id="avisoHttpsIphone" style="display:none; background:rgba(37,99,235,0.12); border:1px solid #2563eb; padding:10px; border-radius:6px; margin-bottom:10px; text-align:left;">
+        <div style="font-size:12px; font-weight:700; color:var(--text-main); margin-bottom:6px;">📱 En iPhone el video continuo sin tomar foto requiere conexión segura (HTTPS):</div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" class="btn-modal-imprimir" style="flex:1; background:#2563eb; padding:9px; font-size:11px; margin:0;" onclick="abrirModoHttpsEnVivo()">🔒 Ir a HTTPS (:3443)</button>
+          <a href="/instalar-certificado" class="btn-modal-imprimir" style="flex:1; background:#059669; padding:9px; font-size:11px; margin:0; text-decoration:none; text-align:center; display:inline-block;">📥 Instalar Perfil iOS</a>
+        </div>
+      </div>
+
+      <div class="controles-escaner-barra">
+        <div style="display:flex; gap:6px; align-items:center;">
+          <span style="font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Lente:</span>
+          <select id="selectCamaraLente" class="form-input" style="padding:6px 8px; font-size:12px; flex:1;" onchange="cambiarCamaraEscaner(this.value)">
+            <option value="">Cámara Trasera (Auto)</option>
+          </select>
+        </div>
+        <div class="fila-zoom-escaner">
+          <button type="button" class="btn-zoom-cam" data-zoom="1" onclick="aplicarZoomCamara(1)">1x</button>
+          <button type="button" class="btn-zoom-cam activo" data-zoom="1.5" onclick="aplicarZoomCamara(1.5)">1.5x (Papel)</button>
+          <button type="button" class="btn-zoom-cam" data-zoom="2" onclick="aplicarZoomCamara(2)">2x (Macro)</button>
+          <button type="button" class="btn-zoom-cam" data-zoom="3" onclick="aplicarZoomCamara(3)">3x</button>
+          <button type="button" id="btnLinternaCam" class="btn-zoom-cam" onclick="toggleLinternaCamara()" title="Linterna">🔦</button>
+        </div>
+      </div>
+
+      <div id="lectorCamaraBox" style="width:100%; border-radius:8px; overflow:hidden; margin-bottom:12px; background:#0f172a; min-height: 200px; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:12px;"></div>
+      
+      <input type="file" id="inputFotoBarcode" accept="image/*" capture="environment" style="display:none;" onchange="procesarFotoBarcode(event)">
+      <button type="button" class="btn-modal-imprimir" style="background:#0284c7; padding:13px; font-size:13px; margin-bottom:10px;" onclick="document.getElementById('inputFotoBarcode').click()">📸 O Escanear desde Foto (Auto-Enfoque HD)</button>
+      <button type="button" class="btn-modal-cerrar" onclick="detenerEscanerCamara()">Cerrar Escáner</button>
+    </div>
+  </div>
+
+  <!-- MODAL GESTIÓN DE CAJEROS Y PINS -->
+  <div id="modalGestionUsuarios" class="modal-fondo" style="z-index: 1090;">
+    <div class="modal-caja" style="max-width: 500px; text-align:left;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h2 class="modal-titulo" style="margin:0;">Cajeros y Administradores</h2>
+        <button class="btn-eliminar" onclick="cerrarModalUsuarios()">✕</button>
+      </div>
+      <div style="display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;">
+        <input type="text" id="userNombreInput" class="form-input" list="bloqueo-historial" autocomplete="one-time-code" style="flex:2; min-width:120px;" placeholder="Nombre (Ej. Juan)">
+        <input type="text" id="userPinInput" class="form-input" list="bloqueo-historial" autocomplete="one-time-code" style="flex:1; min-width:80px;" placeholder="PIN (Ej. 3333)">
+        <select id="userRolInput" class="form-input" style="flex:1; min-width:95px;">
+          <option value="cajero">Cajero</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button class="btn-ajuste-stock" style="background:#059669; padding:10px 14px;" onclick="guardarUsuarioUI()">+ Guardar</button>
+      </div>
+      <div class="tabla-container" style="max-height:240px; border:1px solid var(--border-color); border-radius:var(--radius);">
+        <table style="min-width:unset;">
+          <thead><tr><th>Nombre</th><th>Seguridad PIN</th><th>Rol</th><th style="text-align:right;">Acción</th></tr></thead>
+          <tbody id="listaUsuariosMaster"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALES DE OPERACIÓN -->
+  <div id="modalGastos" class="modal-fondo" style="z-index: 1080;">
+    <div class="modal-caja" style="max-width:400px;">
+      <div class="icono-modal icono-rojo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+      </div>
+      <h2 class="modal-titulo" style="margin-bottom: 8px;">Registrar Egreso de Caja</h2>
+      <p style="color:var(--text-muted); margin-bottom:20px; font-size: 13px;">El importe se descontará del Efectivo Neto del turno.</p>
+      <input type="text" id="inputConceptoGasto" list="bloqueo-historial" autocomplete="one-time-code" style="width:100%; box-sizing:border-box; padding:12px; font-size:15px; font-weight: 500; border:1px solid var(--border-color); border-radius:var(--radius); outline:none; background:var(--bg-body); color:var(--text-main); margin-bottom:12px;" placeholder="Concepto (Ej. Insumos, Transporte)">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:24px; width:100%; box-sizing:border-box;">
+        <span style="font-size:24px; font-weight:800; color: var(--text-main);">$</span>
+        <input type="number" id="inputMontoGasto" autocomplete="off" style="flex:1; min-width:0; box-sizing:border-box; padding:12px; font-size:24px; font-weight:800; border:1px solid var(--border-color); border-radius:var(--radius); outline:none; background:var(--bg-body); color:var(--text-main);" placeholder="0.00">
+      </div>
+      <div style="display:flex; gap:10px; width:100%; box-sizing:border-box;">
+        <button class="btn-modal-cerrar" onclick="cerrarModalGasto()" style="flex:1; margin:0;">Cancelar</button>
+        <button class="btn-modal-imprimir" onclick="pedirPinSeguridad('gasto', '')" style="flex:1; background:#dc2626; margin:0;">Autorizar Retiro</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ventanaExito" class="modal-fondo">
+    <div class="modal-caja" style="padding: 36px;">
+      <div class="icono-modal icono-verde" style="width:60px; height:60px; border-radius:50%;">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+      <h2 class="modal-titulo" style="margin-bottom:16px; font-size: 22px;">Operación Completada</h2>
+      <div id="cajaCambioExito" style="font-size:18px; font-weight:800; color: var(--text-main); background: var(--bg-body); padding: 14px; border-radius: 6px; margin-bottom: 18px; border: 1px solid var(--border-color); display:none;"></div>
+      <button class="btn-modal-imprimir" onclick="imprimirTicket()" style="padding: 16px; font-size: 14px;">Imprimir Comprobante</button>
+      <button class="btn-modal-cerrar" onclick="cerrarVentanaExito()" style="border: none; background: transparent; color: var(--text-muted); padding: 8px;">Continuar [ESC]</button>
+    </div>
+  </div>
+
+  <!-- MODAL CORTE DE CAJA CON GANANCIA NETA REAL, ARQUEOS CIEGOS Y EXPORTACIÓN CSV -->
+  <div id="modalCorteCaja" class="modal-fondo" style="z-index: 1080;">
+    <div class="modal-caja" style="max-width: 740px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+        <h2 class="modal-titulo" style="margin:0;">Arqueo, Corte Z y Utilidad Real</h2>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <select id="selectCajeroCorte" style="padding:8px 12px; border:1px solid var(--border-color); border-radius:var(--radius); font-weight:700; background:var(--bg-body); color:var(--text-main); outline: none;" onchange="calcularCorteCaja()">
+            <option value="Todos">Todos (Consolidado Z)</option>
+          </select>
+          <input type="date" id="inputFechaCorte" style="padding:8px 12px; border:1px solid var(--border-color); border-radius:var(--radius); font-weight:700; background:var(--bg-body); color:var(--text-main); outline: none;" onchange="calcularCorteCaja()">
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-body); border:1px solid var(--border-color); padding:10px 14px; border-radius:var(--radius); margin-bottom:12px; gap:10px; flex-wrap:wrap;">
+        <div style="text-align:left;">
+          <span style="font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; display:block;">Fondo Inicial en Caja (Sencillo):</span>
+          <small id="lblEstadoFondoDia" style="font-size:11px; color:var(--text-muted);">Solo se permite establecer 1 vez por día.</small>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-weight:800; color:var(--text-main);">$</span>
+          <input type="number" id="inputFondoInicialCorte" autocomplete="off" style="width:100px; padding:6px 10px; font-size:15px; font-weight:700; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-panel); color:var(--text-main); text-align:right; outline:none;" placeholder="0.00">
+          <button class="btn-ajuste-stock" id="btnGuardarFondoCorte" onclick="guardarFondoInicialUI()" style="padding:7px 12px; background:#0284c7;">Aplicar Fondo</button>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:12px; text-align:center;">
+        <div class="caja-metrica" style="flex:1; border-left:4px solid #64748b; background: var(--bg-body);">
+          <h4>Efectivo Neto (Solo Ventas)</h4>
+          <div class="valor" style="color:var(--text-main); font-size:23px;" id="corteEfectivoNeto">$0.00</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px; font-weight: 500;">(Ventas Efectivo + Anticipos - Egresos)</div>
+        </div>
+        <div class="caja-metrica" style="flex:1; border-left:4px solid #10b981; background: var(--bg-body);">
+          <h4>Total Físico en Cajón</h4>
+          <div class="valor" style="color:#10b981; font-size:26px;" id="corteTotalEnCajon">$0.00</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px; font-weight: 500;">(Fondo Inicial + Efectivo Neto)</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:12px; text-align:center;">
+        <div class="caja-metrica" style="flex:1; border-left:4px solid #3b82f6;">
+          <h4>Banco Agrícola</h4>
+          <div class="valor" style="color:#3b82f6; font-size:21px;" id="corteAgricola">$0.00</div>
+        </div>
+        <div class="caja-metrica" style="flex:1; border-left:4px solid #0ea5e9;">
+          <h4>Banco Cuscatlán</h4>
+          <div class="valor" style="color:#0ea5e9; font-size:21px;" id="corteCuscatlan">$0.00</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:12px; text-align:center;">
+        <div class="caja-metrica" style="flex:1; border-left:4px solid #f59e0b;">
+          <h4>Contraentrega (En Tránsito)</h4>
+          <div class="valor" style="color:#f59e0b; font-size:21px;" id="corteContraentrega">$0.00</div>
+        </div>
+        <div class="caja-metrica" style="flex:1; border-left:4px solid #ef4444;">
+          <h4>Egresos Registrados</h4>
+          <div class="valor" style="color:#ef4444; font-size:21px;" id="corteGastos">$0.00</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:12px; text-align:center;">
+        <div class="caja-metrica" style="flex:1; border-left:4px solid #8b5cf6; background:var(--bg-body);">
+          <h4>Costo de Mercadería Vendida</h4>
+          <div class="valor" style="color:#8b5cf6; font-size:20px;" id="corteCostoMercaderia">$0.00</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Inversión en artículos vendidos hoy</div>
+        </div>
+        <div class="caja-metrica" style="flex:1; border-left:4px solid #059669; background:rgba(16, 185, 129, 0.08);">
+          <h4>📊 Ganancia Neta Real (Utilidad)</h4>
+          <div class="valor" style="color:#059669; font-size:24px;" id="corteGananciaNeta">$0.00</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Margen Bruto: <strong id="corteMargenPorcentaje" style="color:#10b981;">0%</strong> (Desc. Costo y Egresos)</div>
+        </div>
+      </div>
+
+      <!-- TABLA DE ARQUEOS CIEGOS (ENTREGAS DE TURNO DE CAJEROS) -->
+      <div id="contenedorArqueosCiegosCorte" style="display:none; text-align:left; background:var(--bg-body); border:1px solid var(--border-color); border-radius:var(--radius); padding:10px 12px; margin-bottom:10px;">
+        <div style="font-size:11px; font-weight:800; color:#0d9488; text-transform:uppercase; margin-bottom:6px;">🧮 Entregas de Turno Declaradas por Cajeros (Arqueo Ciego):</div>
+        <div id="listaArqueosCiegosCorte" style="font-size:12px; max-height:110px; overflow-y:auto;"></div>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
+        <button class="btn-modal-cerrar" onclick="cerrarCorteCaja()" style="flex:1; margin:0;">Cerrar</button>
+        <button class="btn-modal-imprimir" onclick="exportarReporteContableUI('corte')" style="flex:1.2; margin:0; background:#059669;">📊 Exportar Excel (.CSV)</button>
+        <button class="btn-modal-imprimir" onclick="imprimirCorteCajaFisico()" id="btnImprimirCorte" style="flex:1.5; margin:0; background:#0f172a;">🖨️ Imprimir Reporte Z</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalHistorial" class="modal-fondo">
+    <div class="modal-caja modal-caja-historial">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+        <h2 class="modal-titulo" style="margin:0;">Registro de Operaciones</h2>
+        <button class="btn-modal-cerrar" style="width:auto; padding:8px 16px; margin:0;" onclick="cerrarHistorial()">Cerrar [ESC]</button>
+      </div>
+      <div style="display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
+        <input type="date" id="filtroFechaHistorial" class="input-pago" style="flex:1; border:1px solid var(--border-color); color:var(--text-main); background:var(--bg-body); font-weight:bold; min-width: 150px; margin:0;" onchange="cargarHistorialConFiltro()">
+        <select id="filtroHistorial" class="input-pago" style="flex:1; border:1px solid var(--border-color); color:var(--text-main); background:var(--bg-body); font-weight:bold; min-width: 200px; margin:0;" onchange="renderizarTablaHistorial()">
+          <option value="Todos">Todas las modalidades</option>
+          <option value="(Local)">Mostrador / Apartados</option>
+          <option value="(Envío)">Despachos a Domicilio</option>
+          <option value="Pago Mixto">Pagos Mixtos</option>
+          <option value="Cortesía">Cortesías / Uso Propio</option>
+        </select>
+        <button class="btn-modal-imprimir" style="flex:1; margin:0; background:#059669; min-width: 180px; padding:10px 14px;" onclick="exportarReporteContableUI('historial')">📊 Exportar Excel (.CSV)</button>
+        <button class="btn-modal-imprimir" style="flex:1; margin:0; background:#4f46e5; min-width: 200px; padding:10px 14px;" onclick="imprimirLoteGuiasEnvio()">Imprimir Guías Seleccionadas</button>
+      </div>
+      <div class="tabla-container" style="flex:1; overflow-y:auto; border: 1px solid var(--border-color); border-radius: var(--radius);">
+        <table style="border-collapse: collapse;">
+          <thead><tr><th style="width:40px; text-align:center;">Guía</th><th>Ticket ID / Estado</th><th>Fecha y Hora</th><th>Cliente / Motivo</th><th>Importe</th><th style="text-align: right;">Acciones</th></tr></thead>
+          <tbody id="listaHistorial"><tr><td colspan="6" style="text-align:center; padding: 30px; color: var(--text-muted);">Consultando registros...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalDetalleTicket" class="modal-fondo" style="z-index: 1080;">
+    <div class="modal-caja modal-caja-historial" style="max-width:700px; padding:30px;">
+      <h2 class="modal-titulo" style="margin-bottom:4px;">Desglose de Comprobante</h2>
+      <p id="lblDetalleIdVenta" style="color:var(--text-muted); font-size:13px; margin-bottom:16px; font-family:monospace; font-weight: 700;"></p>
+      
+      <div class="totales-grid" style="background:var(--bg-body); border:1px solid var(--border-color); margin-bottom:16px; color:var(--text-main); padding:16px; box-shadow: none;">
+        <div style="font-size:14px; margin-bottom:6px;"><b>Cliente:</b> <span id="lblDetalleCliente"></span></div>
+        <div style="font-size:14px; margin-bottom:6px;"><b>Fecha:</b> <span id="lblDetalleFecha"></span></div>
+        <div style="font-size:14px; margin-bottom:6px;"><b>Modalidad:</b> <span id="lblDetalleMetodoPago"></span></div>
+        <div style="font-size:14px; color:#2563eb; margin-bottom:6px;"><b>Operador:</b> <span id="lblDetalleCajero"></span></div>
+        <div id="filaDetalleRefFiscal" style="display:none; font-size:13px; color:#059669; margin-bottom:6px;"><b>Ref. Factura / DTE:</b> <span id="lblDetalleRefFiscal" style="font-family:monospace; font-weight:700;"></span></div>
+        <div id="filaDetalleMotivoAnulacion" style="display:none; font-size:13px; color:#ef4444; margin-bottom:6px;"><b>Motivo Anulación:</b> <span id="lblDetalleMotivoAnulacion" style="font-weight:700;"></span></div>
+        <div id="zonaDetalleEnvio" style="display:none; font-size:13px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--border-color);">
+          <span style="color:#4f46e5;"><b>Mensajero:</b> <span id="lblDetalleRepartidor" style="font-weight: 600;"></span> | <b>Tarifa:</b> $<span id="lblDetalleTarifa" style="font-weight: 600;"></span></span>
+        </div>
+      </div>
+      
+      <div class="tabla-container" style="max-height:35vh; margin-bottom:16px; border: 1px solid var(--border-color); border-radius: var(--radius);">
+        <table>
+            <thead style="background: var(--bg-body);"><tr><th style="text-align:center;">Cant.</th><th>Artículo</th><th style="text-align:right;">Subtotal</th><th style="text-align:center;">Devolución</th></tr></thead>
+            <tbody id="listaDetallesTicket"></tbody>
+        </table>
+      </div>
+      
+      <div class="totales-grid" style="padding:14px 18px; margin-bottom:20px; border: 1px solid var(--border-color); background: var(--bg-header);">
+        <div class="gran-total" style="font-size:24px!important; border:none; margin:0; padding:0;"><span>TOTAL:</span><span>$<span id="lblDetalleTotal">0.00</span></span></div>
+      </div>
+      
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn-modal-cerrar" onclick="cerrarModalDetalleTicket()" style="flex:1; margin:0;">Cerrar</button>
+        <button class="btn-modal-imprimir" onclick="reimprimirTicketActual()" id="btnReimprimirTicket" style="flex:1; margin:0; background:#0f172a;">Reimprimir Ticket</button>
+        <button class="btn-modal-imprimir" onclick="imprimirEtiquetaEnvioActual()" id="btnImprimirGuia" style="flex:1; margin:0; background:#4f46e5; display: none;">Imprimir Guía</button>
+        <button class="btn-modal-imprimir" id="btnLiquidarDetalle" onclick="abrirLiquidarDesdeDetalle()" style="flex:1; margin:0; background:#059669; display:none;">Liquidar Saldo</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalDevolucionParcial" class="modal-fondo" style="z-index: 1095;">
+    <div class="modal-caja" style="max-width: 400px; padding: 30px;">
+      <div class="icono-modal icono-rojo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+      </div>
+      <h2 class="modal-titulo" style="margin-bottom: 10px;">Devolución Parcial</h2>
+      <p id="lblDevolucionInfo" style="color: var(--text-muted); font-size: 13px; margin-bottom: 18px; line-height: 1.5; white-space: pre-line;"></p>
+      <div style="text-align: left; margin-bottom: 24px;">
+        <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 6px; color: var(--text-main);">Unidades a reintegrar al stock:</label>
+        <input type="number" id="inputCantidadDevolver" autocomplete="off" style="width: 100%; box-sizing: border-box; padding: 12px; font-size: 18px; font-weight: bold; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-body); color: var(--text-main); outline: none;" min="1">
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn-modal-cerrar" onclick="cerrarModalDevolucion()" style="flex: 1; margin:0;">Cancelar</button>
+        <button class="btn-modal-imprimir" onclick="pedirPinSeguridad('devolucion', '')" style="flex: 1; margin: 0; background: #dc2626;">Procesar Retorno</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalLiquidarEnvio" class="modal-fondo" style="z-index: 1090;">
+    <div class="modal-caja" style="max-width:420px; padding: 30px;">
+      <div class="icono-modal icono-verde">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+      </div>
+      <h2 class="modal-titulo" style="margin-bottom:10px;">Liquidar Saldo Pendiente</h2>
+      <p id="lblLiquidarProducto" style="color:var(--text-muted); font-size:13px; margin-bottom:20px; line-height: 1.5; white-space: pre-line;"></p>
+      
+      <div id="divMontoLiquidar" style="text-align:left; margin-bottom:16px;">
+        <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px; color: var(--text-main);">Saldo a Cobrar:</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:20px; font-weight:800; color: var(--text-main);">$</span>
+          <input type="number" id="inputMontoLiquidar" readonly style="flex:1; box-sizing:border-box; padding:12px; font-size:18px; font-weight:bold; border:1px solid var(--border-color); border-radius:var(--radius); background:var(--bg-body); color:var(--text-main); outline:none; cursor:not-allowed;">
+        </div>
+      </div>
+
+      <div style="text-align:left; margin-bottom:24px;">
+        <label style="font-weight:700; font-size:13px; display:block; margin-bottom:6px; color: var(--text-main);">Cuenta de Destino:</label>
+        <select id="selectMetodoLiquidacion" style="width:100%; box-sizing:border-box; padding:12px; font-size:14px; border:1px solid var(--border-color); border-radius:var(--radius); background:var(--bg-body); color:var(--text-main); font-weight: 600; outline: none;">
+          <option value="Efectivo (Cajón)">Efectivo (Cajón físico)</option>
+          <option value="Transferencia Agrícola">Transferencia — Banco Agrícola</option>
+          <option value="Transferencia Cuscatlán">Transferencia — Banco Cuscatlán</option>
+        </select>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn-modal-cerrar" onclick="cerrarModalLiquidar()" style="flex:1; margin:0;">Cancelar</button>
+        <button class="btn-modal-imprimir" onclick="pedirPinSeguridad('liquidar', '')" style="flex:1; margin:0; background:#059669;">Confirmar Liquidación</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE INVENTARIO CON BUSCADOR INTELIGENTE Y BITÁCORA DE AUDITORÍA -->
+  <div id="modalInventario" class="modal-fondo" style="z-index: 1040;">
+    <div class="modal-caja modal-caja-inventario">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; flex-wrap:wrap; gap:8px;">
+        <h2 class="modal-titulo" style="margin:0;">Control de Inventario y Catálogo</h2>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" class="btn-accion" style="background:#059669;" onclick="abrirFichaProductoNuevo()">+ Nuevo Producto</button>
+          <button type="button" class="btn-accion" style="background:#0f766e;" onclick="abrirModalKardex()">📋 Kardex</button>
+          <button type="button" class="btn-accion" style="background:#7c3aed;" onclick="abrirModalDiseñoTicket()">🖼️ Ticket y Guías</button>
+          <button type="button" class="btn-accion" style="background:#0284c7;" onclick="abrirModalUsuarios()">👤 Cajeros y PINs</button>
+          <button type="button" class="btn-accion" style="background:#334155;" onclick="abrirModalAuditoriaSeguridad()" title="Ver Bitácora de Ciberseguridad e IPs">🛡️ Auditoría</button>
+          <button type="button" class="btn-accion" style="background:#d97706;" onclick="abrirModalLicenciaSistema(false)">🔑 Licencia</button>
+          <button type="button" class="btn-accion" style="background:#b91c1c;" onclick="abrirModalBovedaDatos()" title="Respaldar, Auditar Meses Pasados o Limpiar Base de Datos (Solo Dueño)">🔐 Bóveda BD</button>
+          <button type="button" class="btn-modal-cerrar" style="width:auto; padding:8px 16px; margin:0;" onclick="cerrarModalInventario()">Cerrar [ESC]</button>
+        </div>
+      </div>
+
+      <div style="position:relative; margin-bottom:10px;">
+        <input type="text" id="inputBuscarInventario" class="form-input" list="bloqueo-historial" autocomplete="one-time-code" placeholder="🔍 Escribe el nombre, código o categoría del producto para ver recomendaciones o filtrar la tabla...">
+        <div id="sugerenciasInventario" class="sugerencias-dropdown"></div>
+      </div>
+
+      <div class="barra-filtros-inventario">
+        <button type="button" id="btnFiltroInvTodos" class="btn-filtro-stock activo" onclick="aplicarFiltroRapidoInventario('todos')">📦 Todos (<span id="cntInvTodos">0</span>)</button>
+        <button type="button" id="btnFiltroInvBajo" class="btn-filtro-stock" onclick="aplicarFiltroRapidoInventario('bajo')">⚠️ Stock Bajo ≤ 5 (<span id="cntInvBajo">0</span>)</button>
+        <button type="button" id="btnFiltroInvAgotado" class="btn-filtro-stock" onclick="aplicarFiltroRapidoInventario('agotado')">🚫 Agotados (<span id="cntInvAgotado">0</span>)</button>
+        <div style="margin-left:auto; display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" class="btn-ajuste-stock" style="background:#0369a1; padding:8px 12px;" onclick="copiarListaComprasPortapapeles()">📋 Copiar Lista Faltantes</button>
+          <button type="button" class="btn-ajuste-stock" style="background:#0f172a; padding:8px 12px;" onclick="imprimirListaComprasReabastecimiento()">🖨️ Imprimir Lista de Compras</button>
+        </div>
+      </div>
+
+      <div class="tabla-container" style="flex:1; overflow-y:auto; border: 1px solid var(--border-color); border-radius: var(--radius);">
+        <table id="tablaInventario">
+          <thead><tr><th style="width:55px; text-align:center;">Img</th><th>Código</th><th>Descripción</th><th>Precio</th><th style="text-align:center;">Existencia</th><th style="text-align:center;">Estado</th><th style="text-align:right;">Operaciones</th></tr></thead>
+          <tbody id="listaInventarioCompleto"><tr><td colspan="7" style="text-align:center; padding: 30px; color: var(--text-muted);">Cargando inventario...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalOfertaProducto" class="modal-fondo" style="z-index: 1070;">
+    <div class="modal-caja" style="max-width:400px; padding: 30px;">
+      <div class="icono-modal icono-ambar">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+      </div>
+      <h2 class="modal-titulo" style="margin-bottom:10px;">Configurar Promoción</h2>
+      <p id="lblOfertaProducto" style="color:var(--text-main); font-size:14px; margin-bottom:20px; font-weight:700;"></p>
+      <div style="display:flex; gap:10px; margin-bottom:16px; width:100%; box-sizing:border-box;">
+        <input type="number" id="inputOfertaValor" autocomplete="off" style="flex:2; min-width:0; box-sizing:border-box; padding:12px; font-size:16px; font-weight:bold; border:1px solid var(--border-color); border-radius:var(--radius); outline:none; background:var(--bg-body); color:var(--text-main);" placeholder="Descuento (Ej. 10)">
+        <select id="inputOfertaTipo" style="flex:1; min-width:0; box-sizing:border-box; padding:12px; font-size:15px; font-weight:bold; border:1px solid var(--border-color); border-radius:var(--radius); outline:none; background:var(--bg-body); color:var(--text-main);">
+          <option value="%">% Porc.</option>
+          <option value="$">$ Monto</option>
+        </select>
+      </div>
+      <div style="text-align:left; margin-bottom:24px;">
+        <label style="font-size:13px; font-weight:700; color:var(--text-main); display: block; margin-bottom: 6px;">Vigencia hasta:</label>
+        <input type="date" id="inputOfertaFecha" style="width:100%; box-sizing:border-box; padding:12px; font-size:14px; font-weight: 500; border:1px solid var(--border-color); border-radius:var(--radius); outline:none; background:var(--bg-body); color:var(--text-main);">
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn-modal-cerrar" onclick="cerrarModalOferta()" style="flex:1; margin:0;">Cancelar</button>
+        <button class="btn-modal-imprimir" onclick="pedirPinSeguridad('oferta', '')" id="btnGuardarOferta" style="flex:1; margin:0; background:#d97706;">Guardar Promoción</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalAjusteStock" class="modal-fondo" style="z-index: 1070;">
+    <div class="modal-caja" style="max-width:380px; padding: 30px;">
+      <h2 class="modal-titulo" style="margin-bottom:10px;">Ajuste de Existencias</h2>
+      <p id="lblAjusteProducto" style="color:var(--text-muted); font-size:14px; margin-bottom:24px; font-weight:600; line-height: 1.5; white-space: pre-line;"></p>
+      <div style="display:flex; justify-content:center; align-items:center; gap:12px; margin-bottom:24px; width:100%; box-sizing:border-box;">
+        <button class="btn-matematico" onclick="modificarCantidadStock(-1)">-</button>
+        <input type="number" id="inputNuevoStock" autocomplete="off" style="width:100px; box-sizing:border-box; padding:12px; font-size:24px; font-weight:800; text-align:center; border:1px solid var(--border-color); border-radius:var(--radius); outline:none; background:var(--bg-body); color:var(--text-main);">
+        <button class="btn-matematico" onclick="modificarCantidadStock(1)">+</button>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn-modal-cerrar" onclick="cerrarModalAjusteStock()" style="flex:1; margin:0;">Cancelar</button>
+        <button class="btn-modal-imprimir" onclick="guardarAjusteStock()" id="btnGuardarStock" style="flex:1; margin:0; background:#059669;">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalPin" class="modal-fondo" style="z-index: 1100;">
+    <div class="modal-caja" style="max-width:360px; padding: 32px;">
+      <div class="icono-modal icono-azul">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+      </div>
+      <h2 class="modal-titulo" style="margin-bottom: 8px;">Autorización Requerida</h2>
+      <p id="lblMotivoPin" style="color:var(--text-muted); margin-bottom:16px; font-size:13px; line-height: 1.5; white-space: pre-line;"></p>
+      <div id="contenedorMotivoPinAnulacion" style="display:none; margin-bottom:14px; text-align:left;">
+        <label style="font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase; display:block; margin-bottom:4px;">Motivo de Anulación (Bitácora):</label>
+        <input type="text" id="inputMotivoAnulacionPin" class="form-input" list="bloqueo-historial" placeholder="Ej. Error de digitación / Cambio cliente">
+      </div>
+      <input type="text" id="inputPinSeguridad" class="pin-seguro" list="bloqueo-historial" inputmode="numeric" autocomplete="one-time-code" style="width:100%; box-sizing:border-box; padding:12px; font-size:24px; font-weight: bold; text-align:center; border:1px solid var(--border-color); border-radius:var(--radius); letter-spacing:10px; margin-bottom:24px; background:var(--bg-body); color:var(--text-main); outline:none;" placeholder="••••">
+      <div style="display:flex; gap:10px;">
+        <button class="btn-modal-cerrar" onclick="cerrarModalPin()" style="flex:1; margin:0;">Cancelar</button>
+        <button class="btn-modal-imprimir" onclick="confirmarPinSeguridad()" id="btnConfirmarPin" style="flex:1; margin:0; background:#2563eb;">Autorizar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalMenuEtiquetas" class="modal-fondo" style="z-index: 1060;">
+    <div class="modal-caja" style="max-width:480px; padding:30px;">
+      <div class="icono-modal icono-azul">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+      </div>
+      <h2 class="modal-titulo" style="margin-bottom: 6px;">Cola de Impresión de Etiquetas</h2>
+      <p style="color:var(--text-muted); margin-bottom:20px; font-size:13px;">Agrupe varios productos en la misma plantilla antes de imprimir.</p>
+      <div style="display:flex; gap:8px; margin-bottom:12px; width:100%; box-sizing:border-box;">
+        <div style="flex:2; position:relative; min-width:0;">
+          <input type="text" id="inputCodigoEtiqueta" list="bloqueo-historial" autocomplete="one-time-code" style="width:100%; box-sizing:border-box; padding:12px; font-size:14px; border:1px solid var(--border-color); border-radius:var(--radius); outline:none; background:var(--bg-body); color:var(--text-main); font-weight: 500;" placeholder="Buscar nombre o código...">
+          <div id="sugerenciasEtiquetas" class="sugerencias-dropdown"></div>
+        </div>
+        <input type="number" id="inputCantidadEtiquetas" autocomplete="off" style="flex:1; min-width:0; box-sizing:border-box; padding:12px; font-size:14px; border:1px solid var(--border-color); border-radius:var(--radius); outline:none; background:var(--bg-body); color:var(--text-main); font-weight: 500;" placeholder="Cant." value="10">
+      </div>
+      <button class="btn-modal-imprimir" onclick="agregarEtiquetaALista()" id="btnAgregarEtiqueta" style="background:#334155; margin-bottom:16px; width:100%;">Agregar a la Cola</button>
+      <div class="tabla-container" style="max-height:170px; margin-bottom:20px; border:1px solid var(--border-color); border-radius:var(--radius); overflow-y:auto; background: var(--bg-body);">
+        <table style="width:100%; border-collapse:collapse; min-width:unset;">
+          <tbody id="listaColaEtiquetas">
+            <tr><td style="text-align:center; color:var(--text-muted); font-size:13px; padding:18px;">Sin etiquetas en cola.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn-modal-cerrar" onclick="cerrarModalMenuEtiquetas()" style="flex:1; margin:0;">Cerrar</button>
+        <button class="btn-modal-imprimir" onclick="imprimirColaEtiquetas()" id="btnImprimirCola" style="flex:1; margin:0; background:#0284c7;">Imprimir Plantilla</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL BÓVEDA DE BASE DE DATOS + VISOR DE MESES ANTERIORES (CAPA SUPERIOR)
+       ========================================================================= -->
+  <div id="modalBovedaDatos" class="modal-fondo" style="z-index: 1220;">
+    <div class="modal-caja" style="max-width: 820px; text-align: left;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+        <div>
+          <h2 class="modal-titulo" style="margin:0; display:flex; align-items:center; gap:6px;">🔐 Bóveda Cifrada y Visor de Cierres Mensuales</h2>
+          <span style="font-size:11px; color:#ef4444; font-weight:700;">Exclusivo para el Dueño / Administrador Principal — Cifrado Militar AES-256-GCM</span>
+        </div>
+        <button type="button" class="btn-eliminar" onclick="cerrarModalBovedaDatos()">✕</button>
+      </div>
+
+      <div class="tabs-diseno">
+        <button type="button" id="tabBtnBovedaLimpiar" class="tab-btn-diseno activo" onclick="cambiarTabBoveda('limpiar')">📥 Cierre de Mes / Limpiar</button>
+        <button type="button" id="tabBtnBovedaVisor" class="tab-btn-diseno" onclick="cambiarTabBoveda('visor')">📊 Visor de Meses (.posbkp)</button>
+        <button type="button" id="tabBtnBovedaRestaurar" class="tab-btn-diseno" onclick="cambiarTabBoveda('restaurar')">📤 Restaurar al Sistema</button>
+      </div>
+
+      <!-- CREDENCIALES MAESTRAS COMPARTIDAS -->
+      <div style="display:flex; gap:10px; background:var(--bg-body); padding:12px; border-radius:var(--radius); border:1px solid var(--border-color); margin-bottom:14px; flex-wrap:wrap;">
+        <div class="form-grupo" style="flex:1; min-width:160px; margin:0;">
+          <label>👑 PIN del Dueño / Admin</label>
+          <input type="text" id="bovedaPinDueno" class="form-input pin-seguro" list="bloqueo-historial" inputmode="numeric" placeholder="••••">
+        </div>
+        <div class="form-grupo" style="flex:1.5; min-width:200px; margin:0;">
+          <label>🔑 Contraseña Secreta del Archivo (.posbkp)</label>
+          <input type="text" id="bovedaClaveSecreta" class="form-input pin-seguro" list="bloqueo-historial" placeholder="Mínimo 6 caracteres...">
+        </div>
+      </div>
+
+      <!-- PESTAÑA 1: DESCARGAR Y LIMPIAR (CIERRE DE MES) -->
+      <div id="seccionBovedaLimpiar">
+        <div style="background:rgba(37, 99, 235, 0.08); border:1px solid rgba(37, 99, 235, 0.3); padding:12px; border-radius:var(--radius); margin-bottom:14px;">
+          <div style="font-size:12px; font-weight:800; color:#2563eb; margin-bottom:6px; text-transform:uppercase;">Paso 1 Obligatorio: Descargar Respaldo Completo del Mes</div>
+          <p style="font-size:12px; color:var(--text-muted); margin:0 0 10px 0; line-height:1.4;">
+            Guarda en un archivo cifrado <b>.posbkp</b> todas las ventas, tickets, clientes, egresos, bitácora Kardex y <b>todo tu inventario de productos con su stock actual</b>.
+          </p>
+          <button type="button" id="btnDescargarBoveda" class="btn-modal-imprimir" style="background:#2563eb; margin:0;" onclick="exportarRespaldoBovedaUI()">
+            ⬇️ 1. Generar y Descargar Archivo del Mes (.posbkp)
+          </button>
+        </div>
+
+        <div id="cajaPaso2Limpieza" style="background:rgba(239, 68, 68, 0.07); border:1px solid rgba(239, 68, 68, 0.35); padding:12px; border-radius:var(--radius); opacity:0.55; pointer-events:none; transition:all 0.2s;">
+          <div style="font-size:12px; font-weight:800; color:#ef4444; margin-bottom:6px; text-transform:uppercase;">Paso 2: Limpiar Movimientos para Iniciar Nuevo Mes</div>
+          <p style="font-size:12px; color:var(--text-muted); margin:0 0 10px 0; line-height:1.4;">
+            Se borrarán las ventas, tickets, clientes, egresos, kardex y cortes de caja del mes terminado. <b>Los Cajeros/PINs y el Diseño de tu Ticket NUNCA se borran.</b>
+          </p>
+
+          <label class="chk-opcion-fila" style="margin-bottom:10px; background:var(--bg-panel); padding:8px 10px; border-radius:4px; border:1px solid var(--border-color);">
+            <input type="checkbox" id="chkConservarProductosBoveda" checked>
+            <span>Mantener mis Productos en el sistema para seguir vendiendo (Desmarca si también deseas borrar los productos)</span>
+          </label>
+
+          <div class="form-grupo" style="margin-bottom:10px;">
+            <label style="color:#ef4444;">Escribe exactamente <b>ELIMINAR DATOS</b> para confirmar:</label>
+            <input type="text" id="inputConfirmarFraseBoveda" class="form-input" list="bloqueo-historial" placeholder="ELIMINAR DATOS">
+          </div>
+
+          <button type="button" id="btnEjecutarLimpiezaBoveda" class="btn-modal-imprimir" style="background:#dc2626; margin:0;" onclick="ejecutarLimpiezaBaseDatosUI()">
+            🗑️ 2. Ejecutar Limpieza de Cierre de Mes Ahora
+          </button>
+        </div>
+      </div>
+
+      <!-- PESTAÑA 2: VISOR DE MESES ANTERIORES (MODO LECTURA SIN SOBRESCRIBIR) -->
+      <div id="seccionBovedaVisor" style="display:none;">
+        <div style="background:rgba(14, 165, 233, 0.08); border:1px solid rgba(14, 165, 233, 0.35); padding:12px; border-radius:var(--radius); margin-bottom:12px;">
+          <div style="font-size:12px; font-weight:800; color:#0284c7; margin-bottom:4px; text-transform:uppercase;">🔎 Auditar Archivo .posbkp en Pantalla (Modo Solo Lectura)</div>
+          <p style="font-size:11.5px; color:var(--text-muted); margin:0 0 10px 0;">
+            Revisa todos los movimientos, ventas, ganancias, kardex e inventario de cualquier mes pasado <b>sin borrar ni modificar tu base de datos actual</b>.
+          </p>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="file" id="inputArchivoVisorBoveda" accept=".posbkp,.json" class="form-input" style="flex:2; min-width:200px; padding:7px;">
+            <button type="button" id="btnInspeccionarBoveda" class="btn-modal-imprimir" style="flex:1; min-width:180px; background:#0284c7; margin:0; padding:11px;" onclick="inspeccionarArchivoBovedaUI()">
+              📂 Abrir Archivo en Visor
+            </button>
+          </div>
+        </div>
+
+        <div id="panelResultadosVisorBoveda" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:12px; color:var(--text-muted);">
+            <span>📅 Respaldo exportado el: <strong id="lblFechaExportacionVisor" style="color:var(--text-main);">-</strong></span>
+            <span>👥 Clientes guardados: <strong id="lblClientesVisor" style="color:var(--text-main);">0</strong></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:10px; text-align:center;">
+            <div style="background:var(--bg-body); border:1px solid var(--border-color); padding:8px; border-radius:6px;">
+              <div style="font-size:10px; font-weight:800; color:var(--text-muted);">TOTAL VENDIDO</div>
+              <div id="visorTotalVendido" style="font-size:16px; font-weight:900; color:#10b981;">$0.00</div>
+            </div>
+            <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.35); padding:8px; border-radius:6px;">
+              <div style="font-size:10px; font-weight:800; color:#059669;">GANANCIA NETA REAL</div>
+              <div id="visorGananciaNeta" style="font-size:16px; font-weight:900; color:#059669;">$0.00</div>
+            </div>
+            <div style="background:var(--bg-body); border:1px solid var(--border-color); padding:8px; border-radius:6px;">
+              <div style="font-size:10px; font-weight:800; color:var(--text-muted);">EFECTIVO / BANCOS</div>
+              <div id="visorEfectivoBancos" style="font-size:12px; font-weight:800; color:var(--text-main); margin-top:2px;">Ef: $0 | Bco: $0</div>
+            </div>
+            <div style="background:var(--bg-body); border:1px solid var(--border-color); padding:8px; border-radius:6px;">
+              <div style="font-size:10px; font-weight:800; color:var(--text-muted);">COSTO / EGRESOS</div>
+              <div id="visorCostoGastos" style="font-size:12px; font-weight:800; color:#ef4444; margin-top:2px;">C: $0 | G: $0</div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+            <select id="selectVistaTablaVisor" class="form-input" style="flex:1; min-width:190px; padding:8px;" onchange="renderizarTablaVisorBoveda()">
+              <option value="ventas">🧾 Ventas y Tickets del Mes</option>
+              <option value="productos">📦 Productos e Inventario Guardado</option>
+              <option value="kardex">📋 Movimientos de Kardex del Mes</option>
+              <option value="gastos">💸 Egresos de Caja del Mes</option>
+            </select>
+            <input type="text" id="inputBuscarEnVisor" class="form-input" list="bloqueo-historial" style="flex:1.5; min-width:200px; padding:8px;" placeholder="🔍 Buscar cliente, código, producto o fecha en este archivo..." oninput="renderizarTablaVisorBoveda()">
+          </div>
+
+          <div class="tabla-container" style="max-height:240px; border:1px solid var(--border-color); border-radius:var(--radius); overflow-y:auto;">
+            <table style="min-width:unset; font-size:12px;">
+              <thead id="theadVisorBoveda"></thead>
+              <tbody id="tbodyVisorBoveda"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PESTAÑA 3: RESTAURAR ARCHIVO .POSBKP AL SISTEMA ACTIVO -->
+      <div id="seccionBovedaRestaurar" style="display:none;">
+        <div style="background:rgba(16, 185, 129, 0.08); border:1px solid rgba(16, 185, 129, 0.35); padding:14px; border-radius:var(--radius); margin-bottom:12px;">
+          <div style="font-size:12px; font-weight:800; color:#059669; margin-bottom:6px; text-transform:uppercase;">Restaurar Información Completa al Sistema Activo</div>
+          <p style="font-size:12px; color:var(--text-muted); margin:0 0 12px 0; line-height:1.4;">
+            Selecciona un archivo <b>.posbkp</b> para volver a cargar sus productos, clientes, ventas, kardex y gastos dentro del sistema principal.
+          </p>
+          <input type="file" id="inputArchivoRestaurarBoveda" accept=".posbkp,.json" class="form-input" style="margin-bottom:12px; padding:8px;">
+          <button type="button" id="btnRestaurarBoveda" class="btn-modal-imprimir" style="background:#059669; margin:0;" onclick="restaurarArchivoBovedaUI()">
+            🔄 Descifrar y Restaurar Datos en el Sistema
+          </button>
+        </div>
+      </div>
+
+      <button type="button" class="btn-modal-cerrar" style="margin-top:10px;" onclick="cerrarModalBovedaDatos()">Cerrar Bóveda</button>
+    </div>
+  </div>
+
+  <div id="modalMensaje" class="modal-fondo" style="z-index: 1250;">
+    <div class="modal-caja" style="max-width:360px; padding: 32px;">
+      <div id="iconoMensajeBox" class="icono-modal icono-azul"></div>
+      <h2 id="tituloMensaje" class="modal-titulo" style="margin-bottom: 8px;">Notificación</h2>
+      <p id="textoMensaje" style="color:var(--text-muted); font-size:14px; margin-bottom:24px; line-height: 1.5; white-space: pre-line;"></p>
+      <button class="btn-modal-imprimir" style="background:#2563eb; margin-bottom:0;" onclick="cerrarModalMensaje()">Aceptar</button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       ZONAS DE IMPRESIÓN MAESTRAS (TICKET, CORTE Z, GUÍAS Y LISTA DE COMPRAS)
+       ========================================================================= -->
+  <div class="zonas-impresion-globales">
+    <div id="zona-impresion">
+      <img id="ticket-watermark" class="ticket-watermark-img" src="" style="display:none;">
+      <div class="ticket-contenido-capa">
+        <div class="ticket-header-moderno">
+          <img id="ticket-logo-superior" class="ticket-logo-top" src="" style="display:none;">
+          <h1 id="ticket-titulo-tienda">MI TIENDA</h1>
+          <p class="subtitulo-tienda" id="ticket-subtitulo-tienda">Comprobante de Control Interno</p>
+          <div id="ticket-nit-tienda" class="ticket-header-datos-extra" style="display:none; font-weight:bold;"></div>
+          <div id="ticket-direccion-tienda" class="ticket-header-datos-extra" style="display:none;"></div>
+          <div id="ticket-telefono-tienda" class="ticket-header-datos-extra" style="display:none;"></div>
+          <div id="ticket-redes-tienda" class="ticket-header-datos-extra" style="display:none; font-style:italic;"></div>
+          <p id="ticket-tipo-comprobante" style="font-size:10.5px; font-weight:bold; margin:5px 0 0 0; text-transform:uppercase;"></p>
+        </div>
+
+        <div class="ticket-meta-info">
+          <div class="ticket-meta-row"><span>Fecha:</span><span id="ticket-fecha"></span></div>
+          <div class="ticket-meta-row" id="fila-ticket-cajero"><span>Cajero:</span><span id="ticket-cajero-print"></span></div>
+          <div class="ticket-meta-row" id="fila-ticket-cliente"><span>Cliente:</span><span id="ticket-cliente"></span></div>
+          <div class="ticket-meta-row" id="fila-ticket-tel"><span>Tel:</span><span id="ticket-telefono"></span></div>
+          <div class="ticket-meta-row" id="fila-ticket-dir"><span>Dir:</span><span id="ticket-direccion"></span></div>
+          <div class="ticket-meta-row" id="fila-ticket-ref-fiscal" style="display:none;"><span>Ref. DTE/Fact:</span><span id="ticket-ref-fiscal" style="font-weight:bold;"></span></div>
+          <div class="ticket-meta-row"><span>Método:</span><span id="ticket-metodo"></span></div>
+        </div>
+
+        <div class="linea-punteada-ticket"></div>
+        <table class="ticket-lista-articulos"><tbody id="ticket-items"></tbody></table>
+        <div class="linea-punteada-ticket"></div>
+
+        <div class="ticket-totales-moderno">
+          <div class="ticket-totales-row" id="fila-ticket-descuento"><span>DESCUENTO:</span><span>$<span id="ticket-descuento-monto">0.00</span></span></div>
+          <div class="ticket-totales-row total-destacado"><span>TOTAL:</span><span>$<span id="ticket-total-monto">0.00</span></span></div>
+          <div id="ticket-zona-anticipo" style="display:none; margin-top:6px; border-top:1px dashed black; padding-top:4px;">
+            <div class="ticket-totales-row"><span>Anticipo Recibido:</span><span>$<span id="ticket-anticipo-monto">0.00</span></span></div>
+            <div class="ticket-totales-row" style="font-weight:bold;"><span>Saldo Pendiente:</span><span>$<span id="ticket-saldo-monto">0.00</span></span></div>
+          </div>
+        </div>
+
+        <div class="ticket-despedida">
+          <div class="ticket-politica-box" id="ticket-politica-custom" style="display:none;"></div>
+          <div class="ticket-politica-box" id="ticket-leyenda-legal-custom" style="display:block; font-weight:bold; font-size:9.5px;">DOCUMENTO EXCLUSIVO DE CONTROL INTERNO DE INVENTARIO. NO TIENE VALIDEZ FISCAL NI SUSTITUYE FACTURA O DOCUMENTO TRIBUTARIO ELECTRÓNICO (DTE).</div>
+          <div class="ticket-frase-italica" id="ticket-frase-custom">Gracias por su preferencia.</div>
+          <div class="ticket-thank-you" id="ticket-saludo-final">¡GRACIAS POR SU COMPRA!</div>
+          <div class="ticket-barcode-box" id="contenedor-barcode-ticket-print"><svg id="ticket-barcode-svg"></svg></div>
+          <div class="ticket-web-footer" id="ticket-web-custom">Conserve su comprobante de control interno</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="zona-etiquetas"><div class="grid-etiquetas" id="gridEtiquetasContainer"></div></div>
+    <div id="zona-envio"><div class="grid-envios" id="gridEnviosContainer"></div></div>
+    <div id="zona-lista-compras"></div>
+
+    <div id="zona-corte-caja">
+      <div class="ticket-header">
+        <h1 id="print-corte-tienda">MI TIENDA</h1>
+        <p>REPORTE DE CORTE DE CAJA (CONTROL INTERNO)</p>
+        <p>Fecha: <span id="print-corte-fecha"></span></p>
+        <p>Operador: <span id="print-corte-cajero">Todos (Global Z)</span></p>
+      </div>
+      <table class="ticket-table">
+        <tr><td>Tickets Emitidos:</td><td style="text-align:right;" id="print-corte-tickets">0</td></tr>
+        <tr><td colspan="2" style="font-weight:bold; padding-top:10px;">ARQUEO DE EFECTIVO:</td></tr>
+        <tr><td>(+) Fondo Inicial (Sencillo):</td><td style="text-align:right;" id="print-corte-fondo-inicial">$0.00</td></tr>
+        <tr><td>(+) Ventas / Anticipos Efectivo:</td><td style="text-align:right;" id="print-corte-ingreso-efectivo">$0.00</td></tr>
+        <tr><td>(-) Gastos / Egresos:</td><td style="text-align:right;">-$<span id="print-corte-gastos">0.00</span></td></tr>
+        <tr style="font-weight:bold;"><td>= EFECTIVO NETO VENTAS:</td><td style="text-align:right;" id="print-corte-efectivo-neto">$0.00</td></tr>
+        <tr style="font-weight:bold; font-size:13px;"><td>= TOTAL FÍSICO EN CAJÓN:</td><td style="text-align:right;" id="print-corte-total-cajon">$0.00</td></tr>
+        <tr><td colspan="2" style="font-weight:bold; padding-top:10px;">INGRESOS EN BANCOS:</td></tr>
+        <tr><td>Banco Agrícola:</td><td style="text-align:right;" id="print-corte-agricola">$0.00</td></tr>
+        <tr><td>Banco Cuscatlán:</td><td style="text-align:right;" id="print-corte-cuscatlan">$0.00</td></tr>
+        <tr><td colspan="2" style="font-weight:bold; padding-top:10px;">EN TRÁNSITO:</td></tr>
+        <tr><td>Contraentrega Pendiente:</td><td style="text-align:right;" id="print-corte-contraentrega">$0.00</td></tr>
+        <tr><td colspan="2" style="font-weight:bold; padding-top:10px;">RENTABILIDAD Y UTILIDAD:</td></tr>
+        <tr><td>(-) Costo Mercadería:</td><td style="text-align:right;" id="print-corte-costo">$0.00</td></tr>
+        <tr style="font-weight:bold;"><td>= GANANCIA NETA REAL:</td><td style="text-align:right;" id="print-corte-ganancia-neta">$0.00</td></tr>
+        <tr><td>Margen Bruto (%):</td><td style="text-align:right;" id="print-corte-margen">0%</td></tr>
+      </table>
+      <div class="ticket-totales"><div class="gran-total-ticket">TOTAL VENDIDO: $<span id="print-corte-total">0.00</span></div></div>
+      <div class="ticket-footer">Reporte administrativo de control interno.<br>Software POS</div>
+    </div>
+  </div>
+
+  <!-- SCRIPTS MODULARES DEL POS CON VERSIÓN PARA EVITAR CACHÉ VIEJA -->
+  <script src="/core.js?v=6"></script>
+  <script src="/escaner.js?v=6"></script>
+  <script src="/ventas.js?v=6"></script>
+</body>
+</html>
